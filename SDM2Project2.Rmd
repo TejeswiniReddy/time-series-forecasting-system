@@ -1,0 +1,357 @@
+---
+title: "Project 2"
+author: 'Team Members: Tejeswini Anjaneya Reddy, Shashank Mankala'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+
+### Part 1
+```{r}
+library(zoo)
+
+oil_data <- read.csv("oil.csv")
+```
+
+### Part 2
+```{r}
+oil_data$date <- as.Date(oil_data$date, format = "%Y-%m-%d")
+oil_ts <- zoo(oil_data$dcoilwtico, oil_data$date)
+
+plot(oil_ts, 
+     main = "Raw Oil Price Time Series",
+     xlab = "Date", ylab = "Oil Price in USD",
+     col = "maroon", type = "l")
+
+```
+
+### Part 3
+```{r}
+summary(oil_data)
+sum(is.na(oil_data$dcoilwtico))
+
+library(imputeTS)
+
+imputed_oil_data <- na.interpolation(oil_data$dcoilwtico)
+```
+
+### Part 4
+
+
+```{r}
+imputed_oil_ts <- ts(imputed_oil_data, start = c(2013, 1), frequency = 365)
+
+imputed_oil_data <- data.frame(
+  date = oil_data$date,
+  dcoilwtico = coredata(imputed_oil_ts)
+)
+plot(imputed_oil_data$date, imputed_oil_data$dcoilwtico, type = "l", col = "steelblue", 
+     main = "Daily Oil Prices After Imputation",
+     xlab = "Date", ylab = "Oil Prices")
+
+```
+
+```
+After imputing missing values using linear interpolation, the time series is 
+continuous without noticeable artifacts from imputation. The imputed series preserved 
+the overall pattern and major shifts in oil prices, notably the sharp drop in mid-2014. 
+We cannot see any clear seasonality but medium-term trends and cycles appear.
+
+
+```
+### Part 5
+
+```
+The ETS models are of exponential smoothing methods that model time series data by 
+decomposing it into three components namely error, trend, and seasonality.
+These models are useful for handling data with clear trend and seasonal patterns. 
+ETS models directly select the best combination of components based on information 
+criteria like AIC. We will use the ets() function from the forecast package to fit 
+these models and the forecast() function will be used to generate future values.
+The Holt-Winters method is a specific case of ETS models. It extends simple exponential 
+smoothing by adding components for trend and seasonality. It has 2 forms namely additive 
+and multiplicative. The additive version can be used when the seasonal variation is 
+roughly constant over time, while the multiplicative version is appropriate when the 
+variation changes proportionally with the level of the series. The method updates the level,
+trend, and seasonal components at each time step. We will implement it using HoltWinters() function.
+We can say that Holt-Winters is limited in flexibility and ETS models offer a broader 
+range of configurations and support for damped trends. We can evaluate the model performance
+using tools like checkresiduals() and accuracy().
+
+```
+```{r}
+library(forecast)
+ets_model <- ets(imputed_oil_ts)
+
+summary(ets_model)
+```
+
+
+```{r}
+hw_model <- HoltWinters(imputed_oil_ts, seasonal = "additive")
+
+hw_model
+```
+
+
+```{r}
+ets_forecast <- forecast(ets_model, h = 30)
+plot(ets_forecast, main = "ETS Model Forecast")
+
+hw_forecast <- forecast(hw_model, h = 30)
+plot(hw_forecast, main = "Holt-Winters Forecast")
+
+```
+
+
+### Part 6
+
+```
+Since we observed a long-term trend especially in 2014 when it first started 
+to decline, we have recommended the following models:
+1) ETS(A,A,N) or Holt’s Linear Trend Model: We recommended this model because it captures the 
+level and an additive trend which corresponds with the long-term trend. It is also 
+simple and deals with the trend directly therefore it can be useful for short-term 
+forecasting. This model may not give indication of any medium-term cyclical patterns because 
+it assumes a linear trend.
+2) ETS(A,Ad,N) – Holt’s Damped Trend Model: It is a damped trend model which is a variation
+of Holt’s linear trend that reduces the trend’s influence over time. It can handle 
+cyclical patterns better that aren’t strictly linear. Thus this model can be suitable
+for oil prices, where the trend may stabilize or fluctuate. This model is more flexible 
+than ETS(A,A,N) for capturing medium-term fluctuations and it also prevents over 
+forecasting extreme trends but it can be slightly more complex to interpret due to 
+the damping parameter.
+3) ETS(A,N,N) – Simple Exponential Smoothing: This model smooths the level without modeling 
+trend or seasonality. We considered this model to test if the trend is weak enough to be 
+ignored or if differencing the series makes it stationary. Our assumption is that this 
+model may underperform as we are seeing a trend.
+4) Holt-Winters Additive (ETS(A,A,A)): This is a test to confirm that seasonality is negligible,
+but we can expect it to not perform well due to the lack of fixed seasonal cycles.
+
+
+```
+
+### Part 7
+
+```{r}
+aan_ets <- ets(imputed_oil_ts, model = "AAN")
+
+summary(aan_ets)
+
+checkresiduals(aan_ets)
+```
+
+```{r}
+ann_ets <- ets(imputed_oil_ts, model = "ANN")
+
+summary(ann_ets)
+
+checkresiduals(ann_ets)
+```
+
+
+```{r}
+aadn_ets <- ets(imputed_oil_ts, model = "AAN", damped = TRUE)
+
+summary(aadn_ets)
+
+checkresiduals(aadn_ets)
+```
+
+
+```{r}
+oil_ts_daily <- ts(imputed_oil_ts, frequency = 365)
+
+hw_additive <- HoltWinters(oil_ts_daily, seasonal = "additive")
+
+plot(oil_ts_daily, main = "Holt-Winters Additive Fit", ylab = "Oil Price in USD")
+lines(fitted(hw_additive)[,1], col = "red")
+
+hw_residuals <- oil_ts_daily - fitted(hw_additive)[,1]
+tsdisplay(hw_residuals, main = "Holt-Winters Residuals")
+
+```
+
+
+
+```
+Step 7: Adequacy Analysis Based on Plots
+
+1. ETS(A,N,N) - We can see residuals fluctuating around zero in the residual plot.
+For the most part, we did not notice any trend in the residuals over time. 
+However, we did see large spikes, similar to around 2014, that we observe a drop in oil prices,
+which the model did not account for. 
+In the ACF Plot, most lags fall within the blue confidence bounds which suggests us 
+that there is no significant autocorrelation. We also noticed that there was no significant
+spikes suggesting us the residuals are mostly white noise. This is very reassuring in 
+terms of model adequacy since it can capture key patterns. 
+In the Histogram, the residuals are roughly normally distributed, around center 0, but 
+with some very large negative residuals. 
+As we see no significant spikes in the ACF section, the Ljung-Box p-value > 0.05 tells us
+that the residuals are uncorrelated.
+
+2. ETS(A,A,N) Model - The residual plot is similar to that of ETS(A,N,N) residual plot, 
+fluctuating around zero and having some significant outliers.
+The ACF plot shows no substantial autocorrelation, and the p-value is 0.2358 > 0.05
+from the Ljung-Box test tells us that the residuals were white noise.
+The ACF plot suggests a very slight sign of a normal distribution. The regressions errors
+are roughly near normal distribution and slightly skewed just like the other model at the 1% level. 
+We can see that there is no autocorrelation in the residuals from the histogram plots.
+
+3. ETS(A,Ad,N) - In the Residual Plot, the residuals vary about zero like in ETS(A,N,N),
+except that there are much larger spikes around 2014. These spikes may be a little smaller 
+than with ETS(A,N,N) because the model is dampening the trend and is allowing for some of the
+trend error to decrease. Also, there is no clear trend in the residuals which is a good thing.
+The ACF Plot is useful here again because most of the lags are within the blue confidence 
+bounds with no meaningful autocorrelation in the residuals making it look like white noise
+In the histogram the residuals again are approximately normally distributed with slight skewness,
+similar to ETS(A,N,N) model. 
+We do not see any significant spikes in the ACF and also the Ljung-Box 
+p-value is > 0.05, suggesting these residuals are uncorrelated.
+
+4. Holt-Winters Additive (ETS(A,A,A))
+In the Fitted Values Plot the red line (fitted values) follows the overall downward trend like 
+drop in 2014 but smooths out much of the data’s volatility and medium-term cyclical fluctuations.
+In the Residual Plot, residuals show clear patterns, large positive residuals early
+and negative residuals later, reflecting the model’s systematic failure to fit the data.
+In the ACF Plot several lags exceed the blue confidence bounds like at lags 1, 2 indicating 
+significant autocorrelation.
+PACF Plot shows similar significant spikes, further confirming autocorrelation in residuals.
+Here Residuals are not white noise as there is significant autocorrelation, and the fitted 
+values show systematic deviations. Thus Holt-Winters Additive is inadequate for this data 
+due to the lack of seasonality and its inability to capture the data’s volatility and cyclical
+patterns.
+
+```
+
+### Part 8
+```{r}
+n <- length(imputed_oil_ts)
+train_size <- floor(0.9 * n)
+train_data <- imputed_oil_ts[1:train_size]
+test_data <- imputed_oil_ts[(train_size + 1):n]
+
+h <- length(test_data)
+
+```
+
+
+```{r}
+ann_ets <- ets(train_data, model = "ANN")
+
+fc_ann <- forecast(ann_ets, h = h)
+
+errors_ann <- test_data - fc_ann$mean
+rmse_ann <- sqrt(mean(errors_ann^2))
+mae_ann <- mean(abs(errors_ann))
+mape_ann <- mean(abs(errors_ann / test_data)) * 100
+me_ann <- mean(errors_ann)
+
+naive_errors <- diff(train_data)[1:(length(train_data)-1)]
+scale <- mean(abs(naive_errors))
+mase_ann <- mae_ann / scale
+
+aicc_ann <- ann_ets$aicc
+```
+
+```{r}
+aan_ets <- ets(train_data, model = "AAN")
+
+fc_aan <- forecast(aan_ets, h = h)
+
+errors_aan <- test_data - fc_aan$mean
+rmse_aan <- sqrt(mean(errors_aan^2))
+mae_aan <- mean(abs(errors_aan))
+mape_aan <- mean(abs(errors_aan / test_data)) * 100
+me_aan <- mean(errors_aan)
+naive_errors <- diff(train_data)[1:(length(train_data)-1)]
+scale <- mean(abs(naive_errors))
+mase_aan <- mae_aan / scale
+aicc_aan <- aan_ets$aicc
+```
+
+```{r}
+aadn_ets <- ets(train_data, model = "AAN", damped = TRUE)
+
+fc_aadn <- forecast(aadn_ets, h = h)
+
+errors_aadn <- test_data - fc_aadn$mean
+rmse_aadn <- sqrt(mean(errors_aadn^2))
+mae_aadn <- mean(abs(errors_aadn))
+mape_aadn <- mean(abs(errors_aadn / test_data)) * 100
+me_aadn <- mean(errors_aadn)
+naive_errors <- diff(train_data)[1:(length(train_data)-1)]
+scale <- mean(abs(naive_errors))
+mase_aadn <- mae_aadn / scale
+aicc_aadn <- aadn_ets$aicc
+```
+
+
+```{r}
+hw_model <- HoltWinters(imputed_oil_ts, seasonal = "additive")
+
+fc_hw <- forecast(hw_model, h = h)
+
+errors_hw <- test_data - fc_hw$mean
+rmse_hw <- sqrt(mean(errors_hw^2))
+mae_hw <- mean(abs(errors_hw))
+mape_hw <- mean(abs(errors_hw / test_data)) * 100
+me_hw <- mean(errors_hw)
+naive_errors <- diff(train_data)[1:(length(train_data)-1)]
+scale <- mean(abs(naive_errors))
+mase_hw <- mae_hw / scale
+
+n <- length(imputed_oil_ts)
+k <- 3 + frequency(imputed_oil_ts)
+sse <- sum(residuals(hw_model)^2)
+log_lik <- -n/2 * (log(2 * pi) + log(sse/n) + 1)
+aic <- -2 * log_lik + 2 * k  # AIC
+aicc_hw <- aic + (2 * k * (k + 1)) / (n - k - 1)
+
+```
+
+
+```{r}
+metrics_table <- data.frame(
+  Model = c("ETS(A,N,N)", "ETS(A,A,N)", "ETS(A,Ad,N)", "Holy-Winters"),
+  RMSE = c(rmse_ann, rmse_aan, rmse_aadn, rmse_hw),
+  MAE = c(mae_ann, mae_aan, mae_aadn, mae_hw),
+  MAPE = c(mape_ann, mape_aan, mape_aadn, mape_hw),
+  ME = c(me_ann, me_aan, me_aadn, me_hw),
+  MASE = c(mase_ann, mase_aan, mase_aadn, mase_hw),
+  AICc = c(aicc_ann, aicc_aan, aicc_aadn, aicc_hw)
+)
+print(metrics_table)
+
+```
+
+```
+ETS(A,N,N) is the best model by all performance metrics with the minimum RMSE (2.4670),
+along with MAE, MAPE, ME, MASE, and AICc. It has the best trade-off between accuracy and bias.
+
+```
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
